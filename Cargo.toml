@@ -4,4 +4,24 @@ version = "0.1.0"
 authors = ["yuwolf <wujy.cs@gmail.com>"]
 edition = "2018"
 
+[[bin]]
+name = "server"
+path = "src/run_server.rs"
+
+[[bin]]
+name = "client"
+path = "src/run_client.rs"
+
 [dependencies]
+futures = "0.1.16"
+grpcio = "0.4.0"
+protobuf = "2.0.2"
+
+[dependencies.raft]
+git = "https://github.com/pingcap/raft-rs.git"
+
+[dependencies.rocksdb]
+git = "https://github.com/pingcap/rust-rocksdb.git"
+
+[build-dependencies]
+protoc-grpcio = "*"

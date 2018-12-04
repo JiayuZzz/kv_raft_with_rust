@@ -1,0 +1,33 @@
+syntax = "proto3";
+
+service KvService {
+    rpc Get(GetReq) returns (GetReply) {}
+    rpc Put(PutReq) returns (PutReply) {}
+}
+
+enum State {
+    OK = 0;
+    WRONG_LEADER = 1;
+    NOT_FOUND = 2;
+    IO_ERROR = 3;
+}
+
+message GetReq {
+    string key = 1;
+    uint64 client_id = 2;
+}
+
+message GetReply {
+    State state = 1;
+    string value = 2;
+}
+
+message PutReq {
+    string key = 1;
+    string value = 2;
+    uint64 client_id = 3;
+}
+
+message PutReply {
+    State state = 1;
+}
