@@ -8,11 +8,12 @@ use futures::Future;
 use futures::sync::oneshot;
 use std::thread;
 use std::io::{self,Read};
+use raft::storage::MemStorage;
 
 
 fn main() {
     let env = Arc::new(Environment::new(1));
-    let kv = KVServer::new(String::from("./testdb"));
+    let kv = KVServer::new(String::from("./testdb"),MemStorage::new());
     let service = kvservice_grpc::create_kv_service(kv);
     let mut server = ServerBuilder::new(env)
         .register_service(service)
