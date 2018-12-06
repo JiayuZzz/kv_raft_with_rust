@@ -10,6 +10,7 @@ service KvService {
 
 service RaftService {
     rpc SendMsg(eraftpb.Message) returns(Null) {}
+    rpc SendAddress(AddressState) returns(Null) {}
 }
 
 enum State {
@@ -26,9 +27,14 @@ message GetReq {
     uint64 client_id = 2;
 }
 
+message AddressState {
+    string address_map = 1;
+}
+
 message GetReply {
     State state = 1;
     string value = 2;
+    string address_map = 3;
 }
 
 message PutReq {
@@ -39,8 +45,10 @@ message PutReq {
 
 message PutReply {
     State state = 1;
+    string address_map = 2;
 }
 
 message ChangeReply {
     State state = 1;
+    string address_map = 2;
 }

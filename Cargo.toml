@@ -12,6 +12,10 @@ path = "src/run_server.rs"
 name = "client"
 path = "src/run_client.rs"
 
+[[bin]]
+name = "main"
+path = "src/main.rs"
+
 [dependencies]
 futures = "0.1.16"
 grpcio = "0.4.0"

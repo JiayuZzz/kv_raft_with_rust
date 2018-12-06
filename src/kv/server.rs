@@ -17,6 +17,7 @@ use grpcio::{RpcContext, UnarySink};
 use super::super::raft_config::config;
 use super::super::raft_config::server::RaftServer;
 use std::sync::mpsc::{Sender,Receiver,self};
+use std::collections::HashMap;
 
 #[derive(Clone)]
 pub struct KVServer {
@@ -38,8 +39,8 @@ impl KVServer {
         db_path:String,
         raft_storage:MemStorage,
         server_id:u64,
-        num_servers:u64,
-        addresses:Vec<String>,
+        raft_address:String,
+        addresses:HashMap<u64,String>,
     ) -> (KVServer,RaftServer) {
         let db = DB::open_default(&db_path).unwrap();
 
@@ -47,7 +48,7 @@ impl KVServer {
         let (rs, rr) = mpsc::channel(); // for append raft
         let (apply_s,apply_r) = mpsc::channel(); // for get apply msg from raft
         thread::spawn(move || {
-            config::init_and_run(raft_storage,rr,apply_s,server_id,num_servers,addresses);
+            config::init_and_run(raft_storage,rr,apply_s,server_id,raft_address,addresses);
         });
 
         let kv_server = KVServer{
@@ -82,20 +83,21 @@ impl KvService for KVServer {
             config::Msg::Propose {
                 seq,
                 op,
-                cb: Box::new(move |is_leader:bool| {
+                cb: Box::new(move |is_leader:bool, addresses:Vec<u8>| {
                     // Get
                     let mut reply = GetReply::new();
                     if !is_leader{
                         reply.set_state(State::WRONG_LEADER);
                     } else {
                         let (state, value) = match db.get(req.get_key().as_bytes()) {
-                            Ok(Some(v)) => (State::OK, String::from(v.to_utf8().unwrap())),
+                            Ok(Some(v)) => (State::OK, String::from(v.to_utf8().unwrap()),),
                             Ok(None) => (State::NOT_FOUND, String::from("")),
                             Err(e) => (State::IO_ERROR, String::from(e))
                         };
                         reply.set_state(state);
                         reply.set_value(value);
                     }
+                    reply.set_address_map(String::from_utf8(addresses).unwrap());
                     // done job, wake
                     s1.send(reply).expect("cb channel closed");
                 }),
@@ -129,9 +131,10 @@ impl KvService for KVServer {
             config::Msg::Propose {
                 seq,
                 op,
-                cb: Box::new(move |is_leader:bool| {
+                cb: Box::new(move |is_leader:bool,addresses:Vec<u8>| {
                     let mut reply = PutReply::new();
                     reply.set_state(if is_leader {State::OK} else {State::WRONG_LEADER});
+                    reply.set_address_map(String::from_utf8(addresses).unwrap());
                     // done job, wake
                     s1.send(reply).expect("cb channel closed");
                 }),
@@ -162,16 +165,18 @@ impl KvService for KVServer {
             config::Msg::ConfigChange {
                 seq,
                 change: req,
-                cb: Box::new(move |is_leader: bool| {
+                cb: Box::new(move |is_leader: bool,addresses:Vec<u8>| {
                     let mut reply = ChangeReply::new();
                     reply.set_state(if is_leader{State::OK} else {State::WRONG_LEADER});
                     // done
+                    reply.set_address_map(String::from_utf8(addresses).unwrap());
                     s1.send(reply).expect("cb channel closed");
                 })
             }).unwrap();
         let reply = match r1.recv_timeout(Duration::from_secs(2)) {
             Ok(r) => r,
-            Err(_e) => {
+            Err(e) => {
+                println!("{:?}",e);
                 let mut r = ChangeReply::new();
                 r.set_state(State::IO_ERROR);
                 r

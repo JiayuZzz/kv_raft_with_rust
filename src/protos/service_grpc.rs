@@ -133,6 +133,13 @@ const METHOD_RAFT_SERVICE_SEND_MSG: ::grpcio::Method<super::eraftpb::Message, su
     resp_mar: ::grpcio::Marshaller { ser: ::grpcio::pb_ser, de: ::grpcio::pb_de },
 };
 
+const METHOD_RAFT_SERVICE_SEND_ADDRESS: ::grpcio::Method<super::service::AddressState, super::service::Null> = ::grpcio::Method {
+    ty: ::grpcio::MethodType::Unary,
+    name: "/RaftService/SendAddress",
+    req_mar: ::grpcio::Marshaller { ser: ::grpcio::pb_ser, de: ::grpcio::pb_de },
+    resp_mar: ::grpcio::Marshaller { ser: ::grpcio::pb_ser, de: ::grpcio::pb_de },
+};
+
 #[derive(Clone)]
 pub struct RaftServiceClient {
     client: ::grpcio::Client,
@@ -160,6 +167,22 @@ impl RaftServiceClient {
     pub fn send_msg_async(&self, req: &super::eraftpb::Message) -> ::grpcio::Result<::grpcio::ClientUnaryReceiver<super::service::Null>> {
         self.send_msg_async_opt(req, ::grpcio::CallOption::default())
     }
+
+    pub fn send_address_opt(&self, req: &super::service::AddressState, opt: ::grpcio::CallOption) -> ::grpcio::Result<super::service::Null> {
+        self.client.unary_call(&METHOD_RAFT_SERVICE_SEND_ADDRESS, req, opt)
+    }
+
+    pub fn send_address(&self, req: &super::service::AddressState) -> ::grpcio::Result<super::service::Null> {
+        self.send_address_opt(req, ::grpcio::CallOption::default())
+    }
+
+    pub fn send_address_async_opt(&self, req: &super::service::AddressState, opt: ::grpcio::CallOption) -> ::grpcio::Result<::grpcio::ClientUnaryReceiver<super::service::Null>> {
+        self.client.unary_call_async(&METHOD_RAFT_SERVICE_SEND_ADDRESS, req, opt)
+    }
+
+    pub fn send_address_async(&self, req: &super::service::AddressState) -> ::grpcio::Result<::grpcio::ClientUnaryReceiver<super::service::Null>> {
+        self.send_address_async_opt(req, ::grpcio::CallOption::default())
+    }
     pub fn spawn<F>(&self, f: F) where F: ::futures::Future<Item = (), Error = ()> + Send + 'static {
         self.client.spawn(f)
     }
@@ -167,6 +190,7 @@ impl RaftServiceClient {
 
 pub trait RaftService {
     fn send_msg(&mut self, ctx: ::grpcio::RpcContext, req: super::eraftpb::Message, sink: ::grpcio::UnarySink<super::service::Null>);
+    fn send_address(&mut self, ctx: ::grpcio::RpcContext, req: super::service::AddressState, sink: ::grpcio::UnarySink<super::service::Null>);
 }
 
 pub fn create_raft_service<S: RaftService + Send + Clone + 'static>(s: S) -> ::grpcio::Service {
@@ -174,6 +198,10 @@ pub fn create_raft_service<S: RaftService + Send + Clone + 'static>(s: S) -> ::g
     let mut instance = s.clone();
     builder = builder.add_unary_handler(&METHOD_RAFT_SERVICE_SEND_MSG, move |ctx, req, resp| {
         instance.send_msg(ctx, req, resp)
+    });
+    let mut instance = s.clone();
+    builder = builder.add_unary_handler(&METHOD_RAFT_SERVICE_SEND_ADDRESS, move |ctx, req, resp| {
+        instance.send_address(ctx, req, resp)
     });
     builder.build()
 }

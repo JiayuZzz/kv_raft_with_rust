@@ -18,6 +18,7 @@ use std::sync::mpsc::{RecvTimeoutError, Receiver, Sender};
 use std::time::{Duration, Instant};
 use super::super::kv::server::Op;
 use super::super::protos::service_grpc::RaftServiceClient;
+use super::super::protos::service::AddressState;
 use grpcio::{ChannelBuilder, EnvBuilder};
 use std::sync::Arc;
 use protobuf::Message as PMessage;
@@ -27,7 +28,7 @@ use raft::storage::MemStorage;
 use bincode::{serialize,deserialize};
 use std::thread;
 
-type ProposeCallback = Box<Fn(bool) + Send>;  // if false, not leader
+type ProposeCallback = Box<Fn(bool,Vec<u8>) + Send>;  // if false, not leader. vec is serialized address map
 
 pub enum Msg {
     Propose {
@@ -40,17 +41,28 @@ pub enum Msg {
         change:ConfChange,
         cb: ProposeCallback,
     },
+    Address(AddressState),
     // Here we don't use Raft Message, so use dead_code to
     // avoid the compiler warning.
     #[allow(dead_code)]
     Raft(Message),
 }
 
-pub fn init_and_run(storage:MemStorage, receiver:Receiver<Msg>, apply_sender:Sender<Op>,id:u64, num:u64, addresses:Vec<String>) {
+pub fn init_and_run(storage:MemStorage, receiver:Receiver<Msg>, apply_sender:Sender<Op>,id:u64, raft_address:String, addresses:HashMap<u64,String>) {
+    // create communication clients
     let mut peers = vec![];
-    for i in 1..num+1 {
-        peers.push(i);
+    let mut addresses = addresses;  // id:address
+    let mut rpc_clients = HashMap::new();
+    for (id,address) in &addresses {
+        peers.push(id.clone());
+        insert_client(id.clone(), address.as_str(), &mut rpc_clients);
     }
+    if peers.is_empty() {
+        addresses.insert(id,raft_address);
+        peers.push(id);
+    }
+    println!("{:?}",peers);
+
     // Create the configuration for the Raft node.
     let cfg = Config {
         // The unique ID for the Raft node.
@@ -86,14 +98,12 @@ pub fn init_and_run(storage:MemStorage, receiver:Receiver<Msg>, apply_sender:Sen
 
     // Use a HashMap to hold the `propose` callbacks.
     let mut cbs = HashMap::new();
-    let mut addressess = HashMap::new();  // id:address
-    let mut rpc_clients = init_clients(addresses);         // id:rpc, for send msg to other raft nodes
 
     loop {
         match receiver.recv_timeout(timeout) {
             Ok(Msg::Propose { seq, op, cb }) => {
                 if r.raft.leader_id != r.raft.id{ // not leader, callback to notify client
-                    cb(false);
+                    cb(false,vec![]);
                     continue;
                 }
                 let se_op = serialize(&op).unwrap();
@@ -102,21 +112,38 @@ pub fn init_and_run(storage:MemStorage, receiver:Receiver<Msg>, apply_sender:Sen
             }
             Ok(Msg::ConfigChange {seq,change,cb}) => {
                 if r.raft.leader_id != r.raft.id {
-                    cb(false);
+                    cb(false,vec![]);
                     continue;
                 } else {
                     // TODO add address to map
                     cbs.insert(seq,cb);
-                    r.propose_conf_change(vec![],change).unwrap();
+                    println!("propose conf");
+                    r.propose_conf_change(serialize(&seq).unwrap(),change).unwrap();
                 }
             },
             Ok(Msg::Raft(m)) => {
-//                println!("{} got raft msg from {}",r.raft.id,m.from);
-                if m.get_msg_type() == MessageType::MsgAppend {
-                    println!("node get append");
-                }
+                println!("{} got raft msg from {}",r.raft.id,m.from);
                 r.step(m).unwrap()
             },
+            Ok(Msg::Address (address_state)) => {
+                let new_addresses:HashMap<u64,String> = deserialize(address_state.get_address_map().as_bytes()).unwrap();
+                for (id,address) in &new_addresses {
+                    let insert = match addresses.get(id) {
+                        Some(a) => {
+                            if a == address {
+                                false
+                            } else {
+                                true
+                            }
+                        },
+                        None => {true}
+                    };
+                    if insert {
+                        insert_client(id.clone(),address,&mut rpc_clients);
+                    }
+                }
+                addresses = new_addresses;
+            }
             Err(RecvTimeoutError::Timeout) => (),
             Err(RecvTimeoutError::Disconnected) => return (),
         }
@@ -131,7 +158,7 @@ pub fn init_and_run(storage:MemStorage, receiver:Receiver<Msg>, apply_sender:Sen
             timeout -= d;
         }
 
-        on_ready(&mut r, &mut cbs,&mut addressess ,&mut rpc_clients ,apply_sender.clone(), );
+        on_ready(&mut r, &mut cbs,&mut addresses ,&mut rpc_clients ,apply_sender.clone(), );
     }
 }
 
@@ -146,6 +173,7 @@ fn on_ready(r: &mut RawNode<MemStorage>, cbs: &mut HashMap<u64, ProposeCallback>
     let is_leader = r.raft.leader_id == r.raft.id;
     if is_leader {
         // If the peer is leader, the leader can send messages to other followers ASAP.
+        println!("send leader message");
         let msgs = ready.messages.drain(..);
         for msg in msgs {
             let client = match clients.get(&msg.get_to()) {
@@ -153,9 +181,13 @@ fn on_ready(r: &mut RawNode<MemStorage>, cbs: &mut HashMap<u64, ProposeCallback>
                 None => {continue;},
             };
             let me = r.raft.id;
+            let mut address_state = AddressState::new();
+            address_state.set_address_map(String::from_utf8(serialize(&addresses).unwrap()).unwrap());
             thread::spawn(move || {
                 let msg = msg;
+                let address_state = address_state;
                 client.send_msg(&msg);
+                client.send_address(&address_state);
             });
         }
     }
@@ -217,12 +249,13 @@ fn on_ready(r: &mut RawNode<MemStorage>, cbs: &mut HashMap<u64, ProposeCallback>
                     _ => {}
                 }
                 if let Some(cb) = cbs.remove(&seq) {
-                    cb(true);
+                    cb(true,serialize(addresses).unwrap());
                 }
             }
 
             // handle EntryConfChange
             if entry.get_entry_type() == EntryType::EntryConfChange {
+                println!("hello");
                 let mut change = ConfChange::new();
                 change.merge_from_bytes(entry.get_data());
                 let seq:u64 = deserialize(entry.get_context()).unwrap();
@@ -234,7 +267,7 @@ fn on_ready(r: &mut RawNode<MemStorage>, cbs: &mut HashMap<u64, ProposeCallback>
 
                 r.apply_conf_change(&change);
                 if let Some(cb) = cbs.remove(&seq) {
-                    cb(true);
+                    cb(true,serialize(addresses).unwrap());
                 }
             }
         }
@@ -248,18 +281,6 @@ fn insert_client(id:u64, address:&str, clients:&mut HashMap<u64,Arc<RaftServiceC
     let env = Arc::new(EnvBuilder::new().build());
     let ch = ChannelBuilder::new(env).connect(address);
     let client = RaftServiceClient::new(ch);
-    clients.insert(id,Arc::new(client));
-}
-
-// init communication clients
-fn init_clients(addresses:Vec<String>) -> HashMap<u64,Arc<RaftServiceClient>> {
-    let mut clients = HashMap::new();
-    for i in 1..addresses.len()+1 {
-        let env = Arc::new(EnvBuilder::new().build());
-        let ch = ChannelBuilder::new(env).connect(addresses[i-1].as_str());
-        let client = RaftServiceClient::new(ch);
-        clients.insert(i as u64,Arc::new(client));
-    }
-    clients
+    clients.insert(id.clone(),Arc::new(client));
 }
 

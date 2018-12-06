@@ -5,7 +5,7 @@ extern crate rocksdb;
 
 use rocksdb::{DB, Writable};
 use raft::storage::MemStorage;
-use super::super::protos::service::{PutReply,PutReq,State,GetReply,GetReq,Null};
+use super::super::protos::service::{PutReply,PutReq,State,GetReply,GetReq,Null,AddressState};
 use super::super::protos::service_grpc::{KvService,RaftService};
 use raft::eraftpb::Message;
 use raft::prelude::*;
@@ -27,9 +27,12 @@ impl RaftService for RaftServer {
     // send raft message
     fn send_msg(&mut self, ctx:RpcContext, req:Message, sink: ::grpcio::UnarySink<Null>) {
         let sender = self.sender.clone();
-        if req.get_msg_type() == MessageType::MsgAppend {
-        }
-//        println!("get raft msg from {}",req.from);
         sender.send(config::Msg::Raft(req));
     }
+
+    fn send_address(&mut self, ctx:RpcContext, req:AddressState, sink:UnarySink<Null>) {
+        let sender = self.sender.clone();
+        sender.send(config::Msg::Address(req));
+    }
+
 }
