@@ -5,6 +5,7 @@ import "eraftpb.proto";
 service KvService {
     rpc Get(GetReq) returns (GetReply) {}
     rpc Put(PutReq) returns (PutReply) {}
+    rpc ChangeConfig(eraftpb.ConfChange) returns(ChangeReply) {}
 }
 
 service RaftService {
@@ -37,5 +38,9 @@ message PutReq {
 }
 
 message PutReply {
+    State state = 1;
+}
+
+message ChangeReply {
     State state = 1;
 }

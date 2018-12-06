@@ -31,13 +31,14 @@ type ProposeCallback = Box<Fn(bool) + Send>;  // if false, not leader
 
 pub enum Msg {
     Propose {
+        seq: u64,
         op: Op,
         cb: ProposeCallback,
     },
     ConfigChange {
+        seq:u64,
         change:ConfChange,
-        address:String,
-        cb: ProposeCallback
+        cb: ProposeCallback,
     },
     // Here we don't use Raft Message, so use dead_code to
     // avoid the compiler warning.
@@ -85,28 +86,27 @@ pub fn init_and_run(storage:MemStorage, receiver:Receiver<Msg>, apply_sender:Sen
 
     // Use a HashMap to hold the `propose` callbacks.
     let mut cbs = HashMap::new();
-    let mut rpc_clients = init_clients(addresses);         // for send msg to other raft nodes
+    let mut addressess = HashMap::new();  // id:address
+    let mut rpc_clients = init_clients(addresses);         // id:rpc, for send msg to other raft nodes
 
     loop {
         match receiver.recv_timeout(timeout) {
-            Ok(Msg::Propose { op, cb }) => {
+            Ok(Msg::Propose { seq, op, cb }) => {
                 if r.raft.leader_id != r.raft.id{ // not leader, callback to notify client
                     cb(false);
                     continue;
                 }
                 let se_op = serialize(&op).unwrap();
-                let seq = match op {
-                    Op::Get{key:_key,seq} => seq,
-                    Op::Put{key:_key, val:_val,seq}=>seq
-                };
                 cbs.insert(seq, cb);
-                r.propose(vec![], se_op).unwrap();
+                r.propose(serialize(&seq).unwrap(), se_op).unwrap();
             }
-            Ok(Msg::ConfigChange {change,address,cb}) => {
+            Ok(Msg::ConfigChange {seq,change,cb}) => {
                 if r.raft.leader_id != r.raft.id {
                     cb(false);
                     continue;
                 } else {
+                    // TODO add address to map
+                    cbs.insert(seq,cb);
                     r.propose_conf_change(vec![],change).unwrap();
                 }
             },
@@ -131,11 +131,11 @@ pub fn init_and_run(storage:MemStorage, receiver:Receiver<Msg>, apply_sender:Sen
             timeout -= d;
         }
 
-        on_ready(&mut r, &mut cbs,&mut rpc_clients ,apply_sender.clone(), );
+        on_ready(&mut r, &mut cbs,&mut addressess ,&mut rpc_clients ,apply_sender.clone(), );
     }
 }
 
-fn on_ready(r: &mut RawNode<MemStorage>, cbs: &mut HashMap<u64, ProposeCallback>,clients: &mut HashMap<u64,Arc<RaftServiceClient>>, apply_sender:Sender<Op>) {
+fn on_ready(r: &mut RawNode<MemStorage>, cbs: &mut HashMap<u64, ProposeCallback>,addresses:&mut HashMap<u64,String>, clients: &mut HashMap<u64,Arc<RaftServiceClient>>, apply_sender:Sender<Op>) {
     if !r.has_ready() {
         return;
     }
@@ -152,19 +152,10 @@ fn on_ready(r: &mut RawNode<MemStorage>, cbs: &mut HashMap<u64, ProposeCallback>
                 Some(c) => c.clone(),
                 None => {continue;},
             };
-            if msg.get_msg_type() == MessageType::MsgAppend {
-                println!("append to {}",msg.get_to());
-            }
             let me = r.raft.id;
             thread::spawn(move || {
                 let msg = msg;
-                if msg.get_to() == me {
-                    println!("sed to me");
-                }
                 client.send_msg(&msg);
-                if msg.get_to() == me {
-                    println!("sed to me done");
-                }
             });
         }
     }
@@ -221,15 +212,12 @@ fn on_ready(r: &mut RawNode<MemStorage>, cbs: &mut HashMap<u64, ProposeCallback>
 
             if entry.get_entry_type() == EntryType::EntryNormal {
                 let op:Op = deserialize(entry.get_data()).unwrap();
-                let seq = match &op {
-                    Op::Get{key:_key,seq} => seq,
-                    Op::Put{key:_key, val:_val,seq}=>seq,
-                };
-                if let Some(cb) = cbs.remove(&seq) {
-                    cb(true);
-                }
+                let seq:u64 = deserialize(entry.get_context()).unwrap();
                 match apply_sender.send(op) {
                     _ => {}
+                }
+                if let Some(cb) = cbs.remove(&seq) {
+                    cb(true);
                 }
             }
 
@@ -237,13 +225,30 @@ fn on_ready(r: &mut RawNode<MemStorage>, cbs: &mut HashMap<u64, ProposeCallback>
             if entry.get_entry_type() == EntryType::EntryConfChange {
                 let mut change = ConfChange::new();
                 change.merge_from_bytes(entry.get_data());
+                let seq:u64 = deserialize(entry.get_context()).unwrap();
+                let id = change.get_node_id();
+                let address:String = deserialize(change.get_context()).unwrap();
+
+                insert_client(id,address.as_str(), clients);
+                addresses.insert(id,address);
+
                 r.apply_conf_change(&change);
+                if let Some(cb) = cbs.remove(&seq) {
+                    cb(true);
+                }
             }
         }
     }
 
     // Advance the Raft
     r.advance(ready);
+}
+
+fn insert_client(id:u64, address:&str, clients:&mut HashMap<u64,Arc<RaftServiceClient>>) {
+    let env = Arc::new(EnvBuilder::new().build());
+    let ch = ChannelBuilder::new(env).connect(address);
+    let client = RaftServiceClient::new(ch);
+    clients.insert(id,Arc::new(client));
 }
 
 // init communication clients

@@ -5,7 +5,7 @@ extern crate rocksdb;
 
 use rocksdb::{DB, Writable};
 use raft::storage::MemStorage;
-use super::super::protos::service::{PutReply,PutReq,State,GetReply,GetReq,Null};
+use super::super::protos::service::{PutReply,PutReq,State,GetReply,GetReq,ChangeReply,Null};
 use super::super::protos::service_grpc::{KvService,RaftService};
 use raft::eraftpb::Message;
 use raft::prelude::*;
@@ -28,8 +28,8 @@ pub struct KVServer {
 
 #[derive(Serialize, Deserialize, Clone)]
 pub enum Op {
-    Put{key:String, val:String, seq:u64},
-    Get{key:String, seq:u64},
+    Put{key:String, val:String},
+    Get{key:String},
 }
 
 impl KVServer {
@@ -68,16 +68,19 @@ impl KVServer {
     }
 }
 
+// TODO: merge these fun to one
 impl KvService for KVServer {
     fn get(&mut self, ctx:RpcContext, req:GetReq, sink:UnarySink<GetReply>) {
         let(s1,r1) = mpsc::channel();
         let db = Arc::clone(&self.db);
         let sender = self.sender.clone();
-        let op = Op::Get {key:String::from(req.get_key()),seq:self.seq};
+        let op = Op::Get {key:String::from(req.get_key())};
+        let seq = self.seq;
         self.seq+=1;
         // propose get request to raft
         sender.send(
             config::Msg::Propose {
+                seq,
                 op,
                 cb: Box::new(move |is_leader:bool| {
                     // Get
@@ -98,7 +101,7 @@ impl KvService for KVServer {
                 }),
             }).unwrap();
         // wait job done
-        let reply = match r1.recv_timeout(Duration::from_secs(3)){
+        let reply = match r1.recv_timeout(Duration::from_secs(2)){
             Ok(r) => r,
             Err(_e) => {
                 let mut r = GetReply::new();
@@ -117,12 +120,14 @@ impl KvService for KVServer {
         let(s1,r1) = mpsc::channel();
         let db = Arc::clone(&self.db);
         let sender = self.sender.clone();
-        let op = Op::Put {key:String::from(req.get_key()), val:String::from(req.get_value()),seq:self.seq};
+        let op = Op::Put {key:String::from(req.get_key()), val:String::from(req.get_value())};
+        let seq = self.seq;
         self.seq += 1;
         // propose put request to raft
         println!("send requst");
         sender.send(
             config::Msg::Propose {
+                seq,
                 op,
                 cb: Box::new(move |is_leader:bool| {
                     let mut reply = PutReply::new();
@@ -133,7 +138,7 @@ impl KvService for KVServer {
             }).unwrap();
         // wait job done
         println!("send done");
-        let reply = match r1.recv_timeout(Duration::from_secs(3)){
+        let reply = match r1.recv_timeout(Duration::from_secs(2)){
             Ok(r) => r,
             Err(_e) => {
                 let mut r = PutReply::new();
@@ -147,6 +152,37 @@ impl KvService for KVServer {
             .map_err(move |err| eprintln!("Failed to reply put: {:?}", err));
         ctx.spawn(f);
     }
+
+    fn change_config(&mut self, ctx:RpcContext, req: ConfChange, sink: UnarySink<ChangeReply>){
+        let (s1,r1) = mpsc::channel();
+        let sender = self.sender.clone();
+        let seq = self.seq;
+        self.seq+=1;
+        sender.send(
+            config::Msg::ConfigChange {
+                seq,
+                change: req,
+                cb: Box::new(move |is_leader: bool| {
+                    let mut reply = ChangeReply::new();
+                    reply.set_state(if is_leader{State::OK} else {State::WRONG_LEADER});
+                    // done
+                    s1.send(reply).expect("cb channel closed");
+                })
+            }).unwrap();
+        let reply = match r1.recv_timeout(Duration::from_secs(2)) {
+            Ok(r) => r,
+            Err(_e) => {
+                let mut r = ChangeReply::new();
+                r.set_state(State::IO_ERROR);
+                r
+            }
+        };
+        let f = sink
+            .success(reply.clone())
+            .map_err(move |err| eprintln!("Failed to reply put: {:?}", err));
+        ctx.spawn(f);
+    }
+
 }
 
 // wait for applied entries
@@ -160,8 +196,8 @@ fn apply_daemon(receiver:Receiver<Op>, db:Arc<DB>) {
             }
         };
         match op {
-            Op::Get {key:_k, seq:_s} => {}  // get done by leader
-            Op::Put {key, val, seq:_seq} => {
+            Op::Get {key:_k,} => {}  // get done by leader
+            Op::Put {key, val,} => {
                 println!("put");
                 db.put(key.as_bytes(),val.as_bytes()).unwrap();
                 println!("put done");

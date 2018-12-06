@@ -32,6 +32,13 @@ const METHOD_KV_SERVICE_PUT: ::grpcio::Method<super::service::PutReq, super::ser
     resp_mar: ::grpcio::Marshaller { ser: ::grpcio::pb_ser, de: ::grpcio::pb_de },
 };
 
+const METHOD_KV_SERVICE_CHANGE_CONFIG: ::grpcio::Method<super::eraftpb::ConfChange, super::service::ChangeReply> = ::grpcio::Method {
+    ty: ::grpcio::MethodType::Unary,
+    name: "/KvService/ChangeConfig",
+    req_mar: ::grpcio::Marshaller { ser: ::grpcio::pb_ser, de: ::grpcio::pb_de },
+    resp_mar: ::grpcio::Marshaller { ser: ::grpcio::pb_ser, de: ::grpcio::pb_de },
+};
+
 #[derive(Clone)]
 pub struct KvServiceClient {
     client: ::grpcio::Client,
@@ -75,6 +82,22 @@ impl KvServiceClient {
     pub fn put_async(&self, req: &super::service::PutReq) -> ::grpcio::Result<::grpcio::ClientUnaryReceiver<super::service::PutReply>> {
         self.put_async_opt(req, ::grpcio::CallOption::default())
     }
+
+    pub fn change_config_opt(&self, req: &super::eraftpb::ConfChange, opt: ::grpcio::CallOption) -> ::grpcio::Result<super::service::ChangeReply> {
+        self.client.unary_call(&METHOD_KV_SERVICE_CHANGE_CONFIG, req, opt)
+    }
+
+    pub fn change_config(&self, req: &super::eraftpb::ConfChange) -> ::grpcio::Result<super::service::ChangeReply> {
+        self.change_config_opt(req, ::grpcio::CallOption::default())
+    }
+
+    pub fn change_config_async_opt(&self, req: &super::eraftpb::ConfChange, opt: ::grpcio::CallOption) -> ::grpcio::Result<::grpcio::ClientUnaryReceiver<super::service::ChangeReply>> {
+        self.client.unary_call_async(&METHOD_KV_SERVICE_CHANGE_CONFIG, req, opt)
+    }
+
+    pub fn change_config_async(&self, req: &super::eraftpb::ConfChange) -> ::grpcio::Result<::grpcio::ClientUnaryReceiver<super::service::ChangeReply>> {
+        self.change_config_async_opt(req, ::grpcio::CallOption::default())
+    }
     pub fn spawn<F>(&self, f: F) where F: ::futures::Future<Item = (), Error = ()> + Send + 'static {
         self.client.spawn(f)
     }
@@ -83,6 +106,7 @@ impl KvServiceClient {
 pub trait KvService {
     fn get(&mut self, ctx: ::grpcio::RpcContext, req: super::service::GetReq, sink: ::grpcio::UnarySink<super::service::GetReply>);
     fn put(&mut self, ctx: ::grpcio::RpcContext, req: super::service::PutReq, sink: ::grpcio::UnarySink<super::service::PutReply>);
+    fn change_config(&mut self, ctx: ::grpcio::RpcContext, req: super::eraftpb::ConfChange, sink: ::grpcio::UnarySink<super::service::ChangeReply>);
 }
 
 pub fn create_kv_service<S: KvService + Send + Clone + 'static>(s: S) -> ::grpcio::Service {
@@ -94,6 +118,10 @@ pub fn create_kv_service<S: KvService + Send + Clone + 'static>(s: S) -> ::grpci
     let mut instance = s.clone();
     builder = builder.add_unary_handler(&METHOD_KV_SERVICE_PUT, move |ctx, req, resp| {
         instance.put(ctx, req, resp)
+    });
+    let mut instance = s.clone();
+    builder = builder.add_unary_handler(&METHOD_KV_SERVICE_CHANGE_CONFIG, move |ctx, req, resp| {
+        instance.change_config(ctx, req, resp)
     });
     builder.build()
 }
