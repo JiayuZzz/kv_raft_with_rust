@@ -7,8 +7,8 @@ use grpcio::{ChannelBuilder, EnvBuilder};
 
 use super::server;
 
-use super::super::protos::kvservice::{GetReply, GetReq, PutReply, PutReq, State};
-use super::super::protos::kvservice_grpc::KvServiceClient;
+use super::super::protos::service::{GetReply, GetReq, PutReply, PutReq, State};
+use super::super::protos::service_grpc::KvServiceClient;
 
 pub struct KVClient {
     leader: usize,
@@ -51,7 +51,15 @@ impl KVClient {
                 }
             };
 
-            let reply = client.get(&req).expect("Get Failed!");
+            let reply = match client.get(&req) {
+                Ok(r) => r,
+                _ => { // maybe leader error
+                    let num_servers = self.num_servers;
+                    self.leader = (leader_index + 1) % num_servers;
+                    continue;
+                }
+            };
+
             match reply.get_state() {
                 State::OK => {
                     return String::from(reply.get_value());
@@ -66,7 +74,7 @@ impl KVClient {
                 }
                 _ => {
                     println!("get error!");
-                    return String::from("");
+                    continue;
                 }
             }
         }

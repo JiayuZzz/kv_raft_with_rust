@@ -3,7 +3,7 @@ extern crate kv_raft;
 use std::sync::Arc;
 use kv_raft::kv::server::KVServer;
 use grpcio::{Environment, ServerBuilder};
-use kv_raft::protos::{kvservice_grpc,};
+use kv_raft::protos::{service_grpc,};
 use futures::Future;
 use futures::sync::oneshot;
 use std::thread;
@@ -29,8 +29,8 @@ fn main() {
     let env_kv = Arc::new(Environment::new(1));
     let env_raft = Arc::new(Environment::new(1));
     let (kv,raft) = KVServer::new(format!("testdb{}",server_id),MemStorage::new(),server_id,num_servers,addresses);
-    let kv_service = kvservice_grpc::create_kv_service(kv);
-    let raft_service = kvservice_grpc::create_raft_service(raft);
+    let kv_service = service_grpc::create_kv_service(kv);
+    let raft_service = service_grpc::create_raft_service(raft);
     let mut kv_server = ServerBuilder::new(env_kv)
         .register_service(kv_service)
         .bind("127.0.0.1",(base_port+server_id) as u16)

@@ -1,8 +1,8 @@
 extern crate kv_raft;
 
 use kv_raft::kv::{client,server};
-use kv_raft::protos::kvservice::{PutReq, PutReply, GetReq, GetReply, State};
-use kv_raft::protos::kvservice_grpc::KvServiceClient;
+use kv_raft::protos::service::{PutReq, PutReply, GetReq, GetReply, State};
+use kv_raft::protos::service_grpc::KvServiceClient;
 use grpcio::{ChannelBuilder, EnvBuilder};
 use std::env;
 use std::sync::Arc;

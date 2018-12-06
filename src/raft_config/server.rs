@@ -5,8 +5,8 @@ extern crate rocksdb;
 
 use rocksdb::{DB, Writable};
 use raft::storage::MemStorage;
-use super::super::protos::kvservice::{PutReply,PutReq,State,GetReply,GetReq,Null};
-use super::super::protos::kvservice_grpc::{KvService,RaftService};
+use super::super::protos::service::{PutReply,PutReq,State,GetReply,GetReq,Null};
+use super::super::protos::service_grpc::{KvService,RaftService};
 use raft::eraftpb::Message;
 use raft::prelude::*;
 use std::sync::Arc;

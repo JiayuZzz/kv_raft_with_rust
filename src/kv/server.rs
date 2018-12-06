@@ -5,8 +5,8 @@ extern crate rocksdb;
 
 use rocksdb::{DB, Writable};
 use raft::storage::MemStorage;
-use super::super::protos::kvservice::{PutReply,PutReq,State,GetReply,GetReq,Null};
-use super::super::protos::kvservice_grpc::{KvService,RaftService};
+use super::super::protos::service::{PutReply,PutReq,State,GetReply,GetReq,Null};
+use super::super::protos::service_grpc::{KvService,RaftService};
 use raft::eraftpb::Message;
 use raft::prelude::*;
 use std::sync::Arc;
@@ -22,13 +22,14 @@ use std::sync::mpsc::{Sender,Receiver,self};
 pub struct KVServer {
     db:Arc<DB>,
     sender:Sender<config::Msg>,    // for propose raft
+    seq:u64,                       // operation sequence number
 //    cbs:HashMap<u64, Box<Fn()>>,    // hold callbacks
 }
 
 #[derive(Serialize, Deserialize, Clone)]
 pub enum Op {
-    Put{key:String, val:String},
-    Get{key:String},
+    Put{key:String, val:String, seq:u64},
+    Get{key:String, seq:u64},
 }
 
 impl KVServer {
@@ -52,6 +53,7 @@ impl KVServer {
         let kv_server = KVServer{
             db:Arc::new(db),
             sender:rs.clone(),
+            seq:0
         };
         let raft_server = RaftServer{
             sender:rs,
@@ -71,7 +73,8 @@ impl KvService for KVServer {
         let(s1,r1) = mpsc::channel();
         let db = Arc::clone(&self.db);
         let sender = self.sender.clone();
-        let op = Op::Get {key:String::from(req.get_key())};
+        let op = Op::Get {key:String::from(req.get_key()),seq:self.seq};
+        self.seq+=1;
         // propose get request to raft
         sender.send(
             config::Msg::Propose {
@@ -114,7 +117,8 @@ impl KvService for KVServer {
         let(s1,r1) = mpsc::channel();
         let db = Arc::clone(&self.db);
         let sender = self.sender.clone();
-        let op = Op::Put {key:String::from(req.get_key()), val:String::from(req.get_value())};
+        let op = Op::Put {key:String::from(req.get_key()), val:String::from(req.get_value()),seq:self.seq};
+        self.seq += 1;
         // propose put request to raft
         println!("send requst");
         sender.send(
@@ -156,8 +160,8 @@ fn apply_daemon(receiver:Receiver<Op>, db:Arc<DB>) {
             }
         };
         match op {
-            Op::Get {key:_key} => {}  // get done by leader
-            Op::Put {key, val} => {
+            Op::Get {key:_k, seq:_s} => {}  // get done by leader
+            Op::Put {key, val, seq:_seq} => {
                 println!("put");
                 db.put(key.as_bytes(),val.as_bytes()).unwrap();
                 println!("put done");

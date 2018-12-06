@@ -18,14 +18,14 @@
 #![allow(unused_imports)]
 #![allow(unused_results)]
 
-const METHOD_KV_SERVICE_GET: ::grpcio::Method<super::kvservice::GetReq, super::kvservice::GetReply> = ::grpcio::Method {
+const METHOD_KV_SERVICE_GET: ::grpcio::Method<super::service::GetReq, super::service::GetReply> = ::grpcio::Method {
     ty: ::grpcio::MethodType::Unary,
     name: "/KvService/Get",
     req_mar: ::grpcio::Marshaller { ser: ::grpcio::pb_ser, de: ::grpcio::pb_de },
     resp_mar: ::grpcio::Marshaller { ser: ::grpcio::pb_ser, de: ::grpcio::pb_de },
 };
 
-const METHOD_KV_SERVICE_PUT: ::grpcio::Method<super::kvservice::PutReq, super::kvservice::PutReply> = ::grpcio::Method {
+const METHOD_KV_SERVICE_PUT: ::grpcio::Method<super::service::PutReq, super::service::PutReply> = ::grpcio::Method {
     ty: ::grpcio::MethodType::Unary,
     name: "/KvService/Put",
     req_mar: ::grpcio::Marshaller { ser: ::grpcio::pb_ser, de: ::grpcio::pb_de },
@@ -44,35 +44,35 @@ impl KvServiceClient {
         }
     }
 
-    pub fn get_opt(&self, req: &super::kvservice::GetReq, opt: ::grpcio::CallOption) -> ::grpcio::Result<super::kvservice::GetReply> {
+    pub fn get_opt(&self, req: &super::service::GetReq, opt: ::grpcio::CallOption) -> ::grpcio::Result<super::service::GetReply> {
         self.client.unary_call(&METHOD_KV_SERVICE_GET, req, opt)
     }
 
-    pub fn get(&self, req: &super::kvservice::GetReq) -> ::grpcio::Result<super::kvservice::GetReply> {
+    pub fn get(&self, req: &super::service::GetReq) -> ::grpcio::Result<super::service::GetReply> {
         self.get_opt(req, ::grpcio::CallOption::default())
     }
 
-    pub fn get_async_opt(&self, req: &super::kvservice::GetReq, opt: ::grpcio::CallOption) -> ::grpcio::Result<::grpcio::ClientUnaryReceiver<super::kvservice::GetReply>> {
+    pub fn get_async_opt(&self, req: &super::service::GetReq, opt: ::grpcio::CallOption) -> ::grpcio::Result<::grpcio::ClientUnaryReceiver<super::service::GetReply>> {
         self.client.unary_call_async(&METHOD_KV_SERVICE_GET, req, opt)
     }
 
-    pub fn get_async(&self, req: &super::kvservice::GetReq) -> ::grpcio::Result<::grpcio::ClientUnaryReceiver<super::kvservice::GetReply>> {
+    pub fn get_async(&self, req: &super::service::GetReq) -> ::grpcio::Result<::grpcio::ClientUnaryReceiver<super::service::GetReply>> {
         self.get_async_opt(req, ::grpcio::CallOption::default())
     }
 
-    pub fn put_opt(&self, req: &super::kvservice::PutReq, opt: ::grpcio::CallOption) -> ::grpcio::Result<super::kvservice::PutReply> {
+    pub fn put_opt(&self, req: &super::service::PutReq, opt: ::grpcio::CallOption) -> ::grpcio::Result<super::service::PutReply> {
         self.client.unary_call(&METHOD_KV_SERVICE_PUT, req, opt)
     }
 
-    pub fn put(&self, req: &super::kvservice::PutReq) -> ::grpcio::Result<super::kvservice::PutReply> {
+    pub fn put(&self, req: &super::service::PutReq) -> ::grpcio::Result<super::service::PutReply> {
         self.put_opt(req, ::grpcio::CallOption::default())
     }
 
-    pub fn put_async_opt(&self, req: &super::kvservice::PutReq, opt: ::grpcio::CallOption) -> ::grpcio::Result<::grpcio::ClientUnaryReceiver<super::kvservice::PutReply>> {
+    pub fn put_async_opt(&self, req: &super::service::PutReq, opt: ::grpcio::CallOption) -> ::grpcio::Result<::grpcio::ClientUnaryReceiver<super::service::PutReply>> {
         self.client.unary_call_async(&METHOD_KV_SERVICE_PUT, req, opt)
     }
 
-    pub fn put_async(&self, req: &super::kvservice::PutReq) -> ::grpcio::Result<::grpcio::ClientUnaryReceiver<super::kvservice::PutReply>> {
+    pub fn put_async(&self, req: &super::service::PutReq) -> ::grpcio::Result<::grpcio::ClientUnaryReceiver<super::service::PutReply>> {
         self.put_async_opt(req, ::grpcio::CallOption::default())
     }
     pub fn spawn<F>(&self, f: F) where F: ::futures::Future<Item = (), Error = ()> + Send + 'static {
@@ -81,8 +81,8 @@ impl KvServiceClient {
 }
 
 pub trait KvService {
-    fn get(&mut self, ctx: ::grpcio::RpcContext, req: super::kvservice::GetReq, sink: ::grpcio::UnarySink<super::kvservice::GetReply>);
-    fn put(&mut self, ctx: ::grpcio::RpcContext, req: super::kvservice::PutReq, sink: ::grpcio::UnarySink<super::kvservice::PutReply>);
+    fn get(&mut self, ctx: ::grpcio::RpcContext, req: super::service::GetReq, sink: ::grpcio::UnarySink<super::service::GetReply>);
+    fn put(&mut self, ctx: ::grpcio::RpcContext, req: super::service::PutReq, sink: ::grpcio::UnarySink<super::service::PutReply>);
 }
 
 pub fn create_kv_service<S: KvService + Send + Clone + 'static>(s: S) -> ::grpcio::Service {
@@ -98,7 +98,7 @@ pub fn create_kv_service<S: KvService + Send + Clone + 'static>(s: S) -> ::grpci
     builder.build()
 }
 
-const METHOD_RAFT_SERVICE_SEND_MSG: ::grpcio::Method<super::eraftpb::Message, super::kvservice::Null> = ::grpcio::Method {
+const METHOD_RAFT_SERVICE_SEND_MSG: ::grpcio::Method<super::eraftpb::Message, super::service::Null> = ::grpcio::Method {
     ty: ::grpcio::MethodType::Unary,
     name: "/RaftService/SendMsg",
     req_mar: ::grpcio::Marshaller { ser: ::grpcio::pb_ser, de: ::grpcio::pb_de },
@@ -117,19 +117,19 @@ impl RaftServiceClient {
         }
     }
 
-    pub fn send_msg_opt(&self, req: &super::eraftpb::Message, opt: ::grpcio::CallOption) -> ::grpcio::Result<super::kvservice::Null> {
+    pub fn send_msg_opt(&self, req: &super::eraftpb::Message, opt: ::grpcio::CallOption) -> ::grpcio::Result<super::service::Null> {
         self.client.unary_call(&METHOD_RAFT_SERVICE_SEND_MSG, req, opt)
     }
 
-    pub fn send_msg(&self, req: &super::eraftpb::Message) -> ::grpcio::Result<super::kvservice::Null> {
+    pub fn send_msg(&self, req: &super::eraftpb::Message) -> ::grpcio::Result<super::service::Null> {
         self.send_msg_opt(req, ::grpcio::CallOption::default())
     }
 
-    pub fn send_msg_async_opt(&self, req: &super::eraftpb::Message, opt: ::grpcio::CallOption) -> ::grpcio::Result<::grpcio::ClientUnaryReceiver<super::kvservice::Null>> {
+    pub fn send_msg_async_opt(&self, req: &super::eraftpb::Message, opt: ::grpcio::CallOption) -> ::grpcio::Result<::grpcio::ClientUnaryReceiver<super::service::Null>> {
         self.client.unary_call_async(&METHOD_RAFT_SERVICE_SEND_MSG, req, opt)
     }
 
-    pub fn send_msg_async(&self, req: &super::eraftpb::Message) -> ::grpcio::Result<::grpcio::ClientUnaryReceiver<super::kvservice::Null>> {
+    pub fn send_msg_async(&self, req: &super::eraftpb::Message) -> ::grpcio::Result<::grpcio::ClientUnaryReceiver<super::service::Null>> {
         self.send_msg_async_opt(req, ::grpcio::CallOption::default())
     }
     pub fn spawn<F>(&self, f: F) where F: ::futures::Future<Item = (), Error = ()> + Send + 'static {
@@ -138,7 +138,7 @@ impl RaftServiceClient {
 }
 
 pub trait RaftService {
-    fn send_msg(&mut self, ctx: ::grpcio::RpcContext, req: super::eraftpb::Message, sink: ::grpcio::UnarySink<super::kvservice::Null>);
+    fn send_msg(&mut self, ctx: ::grpcio::RpcContext, req: super::eraftpb::Message, sink: ::grpcio::UnarySink<super::service::Null>);
 }
 
 pub fn create_raft_service<S: RaftService + Send + Clone + 'static>(s: S) -> ::grpcio::Service {

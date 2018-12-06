@@ -17,9 +17,10 @@ use std::collections::HashMap;
 use std::sync::mpsc::{RecvTimeoutError, Receiver, Sender};
 use std::time::{Duration, Instant};
 use super::super::kv::server::Op;
-use super::super::protos::kvservice_grpc::RaftServiceClient;
+use super::super::protos::service_grpc::RaftServiceClient;
 use grpcio::{ChannelBuilder, EnvBuilder};
 use std::sync::Arc;
+use protobuf::Message as PMessage;
 
 use raft::prelude::*;
 use raft::storage::MemStorage;
@@ -32,6 +33,11 @@ pub enum Msg {
     Propose {
         op: Op,
         cb: ProposeCallback,
+    },
+    ConfigChange {
+        change:ConfChange,
+        address:String,
+        cb: ProposeCallback
     },
     // Here we don't use Raft Message, so use dead_code to
     // avoid the compiler warning.
@@ -89,11 +95,21 @@ pub fn init_and_run(storage:MemStorage, receiver:Receiver<Msg>, apply_sender:Sen
                     continue;
                 }
                 let se_op = serialize(&op).unwrap();
-                cbs.insert(se_op.clone(), cb);
-                println!("propose");
+                let seq = match op {
+                    Op::Get{key:_key,seq} => seq,
+                    Op::Put{key:_key, val:_val,seq}=>seq
+                };
+                cbs.insert(seq, cb);
                 r.propose(vec![], se_op).unwrap();
-                println!("propose done");
             }
+            Ok(Msg::ConfigChange {change,address,cb}) => {
+                if r.raft.leader_id != r.raft.id {
+                    cb(false);
+                    continue;
+                } else {
+                    r.propose_conf_change(vec![],change).unwrap();
+                }
+            },
             Ok(Msg::Raft(m)) => {
 //                println!("{} got raft msg from {}",r.raft.id,m.from);
                 if m.get_msg_type() == MessageType::MsgAppend {
@@ -119,7 +135,7 @@ pub fn init_and_run(storage:MemStorage, receiver:Receiver<Msg>, apply_sender:Sen
     }
 }
 
-fn on_ready(r: &mut RawNode<MemStorage>, cbs: &mut HashMap<Vec<u8>, ProposeCallback>,clients: &mut HashMap<u64,Arc<RaftServiceClient>>, apply_sender:Sender<Op>) {
+fn on_ready(r: &mut RawNode<MemStorage>, cbs: &mut HashMap<u64, ProposeCallback>,clients: &mut HashMap<u64,Arc<RaftServiceClient>>, apply_sender:Sender<Op>) {
     if !r.has_ready() {
         return;
     }
@@ -204,17 +220,25 @@ fn on_ready(r: &mut RawNode<MemStorage>, cbs: &mut HashMap<Vec<u8>, ProposeCallb
             }
 
             if entry.get_entry_type() == EntryType::EntryNormal {
-                println!("hello");
                 let op:Op = deserialize(entry.get_data()).unwrap();
+                let seq = match &op {
+                    Op::Get{key:_key,seq} => seq,
+                    Op::Put{key:_key, val:_val,seq}=>seq,
+                };
+                if let Some(cb) = cbs.remove(&seq) {
+                    cb(true);
+                }
                 match apply_sender.send(op) {
                     _ => {}
                 }
-                if let Some(cb) = cbs.remove(entry.get_data()) {
-                    cb(true);
-                }
             }
 
-            // TODO: handle EntryConfChange
+            // handle EntryConfChange
+            if entry.get_entry_type() == EntryType::EntryConfChange {
+                let mut change = ConfChange::new();
+                change.merge_from_bytes(entry.get_data());
+                r.apply_conf_change(&change);
+            }
         }
     }
 
