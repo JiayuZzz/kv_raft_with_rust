@@ -17,13 +17,14 @@ use std::collections::HashMap;
 use std::sync::mpsc::{RecvTimeoutError, Receiver, Sender};
 use std::time::{Duration, Instant};
 use super::super::kv::server::Op;
-use super::super::protos::kvservice_grpc::KvServiceClient;
+use super::super::protos::kvservice_grpc::RaftServiceClient;
 use grpcio::{ChannelBuilder, EnvBuilder};
 use std::sync::Arc;
 
 use raft::prelude::*;
 use raft::storage::MemStorage;
 use bincode::{serialize,deserialize};
+use std::thread;
 
 type ProposeCallback = Box<Fn(bool) + Send>;  // if false, not leader
 
@@ -78,7 +79,7 @@ pub fn init_and_run(storage:MemStorage, receiver:Receiver<Msg>, apply_sender:Sen
 
     // Use a HashMap to hold the `propose` callbacks.
     let mut cbs = HashMap::new();
-    let mut rpc_clients = init_clients(addresses,id);         // for send msg to other raft nodes
+    let mut rpc_clients = init_clients(addresses);         // for send msg to other raft nodes
 
     loop {
         match receiver.recv_timeout(timeout) {
@@ -89,10 +90,15 @@ pub fn init_and_run(storage:MemStorage, receiver:Receiver<Msg>, apply_sender:Sen
                 }
                 let se_op = serialize(&op).unwrap();
                 cbs.insert(se_op.clone(), cb);
+                println!("propose");
                 r.propose(vec![], se_op).unwrap();
+                println!("propose done");
             }
             Ok(Msg::Raft(m)) => {
-                println!("{} got raft msg",r.raft.id);
+//                println!("{} got raft msg from {}",r.raft.id,m.from);
+                if m.get_msg_type() == MessageType::MsgAppend {
+                    println!("node get append");
+                }
                 r.step(m).unwrap()
             },
             Err(RecvTimeoutError::Timeout) => (),
@@ -113,7 +119,7 @@ pub fn init_and_run(storage:MemStorage, receiver:Receiver<Msg>, apply_sender:Sen
     }
 }
 
-fn on_ready(r: &mut RawNode<MemStorage>, cbs: &mut HashMap<Vec<u8>, ProposeCallback>,clients: &mut HashMap<u64,Arc<KvServiceClient>>, apply_sender:Sender<Op>) {
+fn on_ready(r: &mut RawNode<MemStorage>, cbs: &mut HashMap<Vec<u8>, ProposeCallback>,clients: &mut HashMap<u64,Arc<RaftServiceClient>>, apply_sender:Sender<Op>) {
     if !r.has_ready() {
         return;
     }
@@ -130,8 +136,20 @@ fn on_ready(r: &mut RawNode<MemStorage>, cbs: &mut HashMap<Vec<u8>, ProposeCallb
                 Some(c) => c.clone(),
                 None => {continue;},
             };
-            println!("send leader msg");
-            client.send_msg(&msg);
+            if msg.get_msg_type() == MessageType::MsgAppend {
+                println!("append to {}",msg.get_to());
+            }
+            let me = r.raft.id;
+            thread::spawn(move || {
+                let msg = msg;
+                if msg.get_to() == me {
+                    println!("sed to me");
+                }
+                client.send_msg(&msg);
+                if msg.get_to() == me {
+                    println!("sed to me done");
+                }
+            });
         }
     }
 
@@ -163,24 +181,30 @@ fn on_ready(r: &mut RawNode<MemStorage>, cbs: &mut HashMap<Vec<u8>, ProposeCallb
                 Some(c) => c.clone(),
                 None => {continue;},
             };
-            println!("send no leader msg to {}",msg.to);
-            client.send_msg(&msg);
+//            println!("send no leader msg to {}",msg.to);
+            thread::spawn(move || {
+                let msg = msg;
+                client.send_msg(&msg);
+            });
         }
     }
 
     if let Some(committed_entries) = ready.committed_entries.take() {
         let mut _last_apply_index = 0;
         for entry in committed_entries {
+            println!("handle commited entries");
             // Mostly, you need to save the last apply index to resume applying
             // after restart. Here we just ignore this because we use a Memory storage.
             _last_apply_index = entry.get_index();
 
             if entry.get_data().is_empty() {
+                println!("empty entry");
                 // Emtpy entry, when the peer becomes Leader it will send an empty entry.
                 continue;
             }
 
             if entry.get_entry_type() == EntryType::EntryNormal {
+                println!("hello");
                 let op:Op = deserialize(entry.get_data()).unwrap();
                 match apply_sender.send(op) {
                     _ => {}
@@ -199,13 +223,12 @@ fn on_ready(r: &mut RawNode<MemStorage>, cbs: &mut HashMap<Vec<u8>, ProposeCallb
 }
 
 // init communication clients
-fn init_clients(addresses:Vec<String>, id:u64) -> HashMap<u64,Arc<KvServiceClient>> {
+fn init_clients(addresses:Vec<String>) -> HashMap<u64,Arc<RaftServiceClient>> {
     let mut clients = HashMap::new();
     for i in 1..addresses.len()+1 {
-        if i == id as usize { continue;}
         let env = Arc::new(EnvBuilder::new().build());
         let ch = ChannelBuilder::new(env).connect(addresses[i-1].as_str());
-        let client = KvServiceClient::new(ch);
+        let client = RaftServiceClient::new(ch);
         clients.insert(i as u64,Arc::new(client));
     }
     clients

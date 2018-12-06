@@ -1,16 +1,21 @@
+// kv rpc server
+
 extern crate rocksdb;
 //extern crate raft;
 
 use rocksdb::{DB, Writable};
 use raft::storage::MemStorage;
 use super::super::protos::kvservice::{PutReply,PutReq,State,GetReply,GetReq,Null};
-use super::super::protos::kvservice_grpc::{KvService};
+use super::super::protos::kvservice_grpc::{KvService,RaftService};
 use raft::eraftpb::Message;
+use raft::prelude::*;
 use std::sync::Arc;
 use std::thread;
+use std::time::Duration;
 use futures::Future;
 use grpcio::{RpcContext, UnarySink};
 use super::super::raft_config::config;
+use super::super::raft_config::server::RaftServer;
 use std::sync::mpsc::{Sender,Receiver,self};
 
 #[derive(Clone)]
@@ -27,13 +32,14 @@ pub enum Op {
 }
 
 impl KVServer {
+    // new kv server and related raft server
     pub fn new (
         db_path:String,
         raft_storage:MemStorage,
         server_id:u64,
         num_servers:u64,
         addresses:Vec<String>,
-    ) -> KVServer {
+    ) -> (KVServer,RaftServer) {
         let db = DB::open_default(&db_path).unwrap();
 
         // run raft node
@@ -43,17 +49,20 @@ impl KVServer {
             config::init_and_run(raft_storage,rr,apply_s,server_id,num_servers,addresses);
         });
 
-        let server = KVServer{
+        let kv_server = KVServer{
             db:Arc::new(db),
+            sender:rs.clone(),
+        };
+        let raft_server = RaftServer{
             sender:rs,
         };
 
-        let db = server.db.clone();
+        let db = kv_server.db.clone();
         thread::spawn(move || {
             apply_daemon(apply_r, db);
         });
 
-        return server;
+        return (kv_server,raft_server)
     }
 }
 
@@ -86,7 +95,14 @@ impl KvService for KVServer {
                 }),
             }).unwrap();
         // wait job done
-        let reply = r1.recv().expect("cb channel closed");
+        let reply = match r1.recv_timeout(Duration::from_secs(3)){
+            Ok(r) => r,
+            Err(_e) => {
+                let mut r = GetReply::new();
+                r.set_state(State::IO_ERROR);
+                r
+            }
+        };
         let f = sink
             .success(reply.clone())
             .map_err(move |err| eprintln!("Failed to reply get: {:?}", err));
@@ -100,6 +116,7 @@ impl KvService for KVServer {
         let sender = self.sender.clone();
         let op = Op::Put {key:String::from(req.get_key()), val:String::from(req.get_value())};
         // propose put request to raft
+        println!("send requst");
         sender.send(
             config::Msg::Propose {
                 op,
@@ -111,18 +128,20 @@ impl KvService for KVServer {
                 }),
             }).unwrap();
         // wait job done
-        let reply = r1.recv().expect("cb channel closed");
+        println!("send done");
+        let reply = match r1.recv_timeout(Duration::from_secs(3)){
+            Ok(r) => r,
+            Err(_e) => {
+                let mut r = PutReply::new();
+                r.set_state(State::IO_ERROR);
+                r
+            }
+        };
+        println!("get reply");
         let f = sink
             .success(reply.clone())
             .map_err(move |err| eprintln!("Failed to reply put: {:?}", err));
         ctx.spawn(f);
-    }
-
-    // send raft message
-    fn send_msg(&mut self, ctx:RpcContext, req:Message, sink: ::grpcio::UnarySink<Null>) {
-        let sender = self.sender.clone();
-        println!("get raft msg from {}",req.from);
-        sender.send(config::Msg::Raft(req));
     }
 }
 
@@ -139,7 +158,9 @@ fn apply_daemon(receiver:Receiver<Op>, db:Arc<DB>) {
         match op {
             Op::Get {key:_key} => {}  // get done by leader
             Op::Put {key, val} => {
+                println!("put");
                 db.put(key.as_bytes(),val.as_bytes()).unwrap();
+                println!("put done");
             }
         }
     }

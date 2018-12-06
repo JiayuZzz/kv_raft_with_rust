@@ -3,7 +3,7 @@ extern crate kv_raft;
 use std::sync::Arc;
 use kv_raft::kv::server::KVServer;
 use grpcio::{Environment, ServerBuilder};
-use kv_raft::protos::kvservice_grpc;
+use kv_raft::protos::{kvservice_grpc,};
 use futures::Future;
 use futures::sync::oneshot;
 use std::thread;
@@ -21,21 +21,30 @@ fn main() {
     let num_servers = args[1].parse::<u64>().unwrap();
     let server_id = args[2].parse::<u64>().unwrap();
     let base_port = args[3].parse::<u64>().unwrap();
-    let mut addresses = vec![];
+    let mut addresses = vec![]; //raft service addresses
     for i in 1..num_servers+1 {
-        addresses.push(generate_address(base_port,i));
+        addresses.push(generate_address(base_port+num_servers,i));
     }
 
-    let env = Arc::new(Environment::new(1));
-    let kv = KVServer::new(format!("testdb{}",server_id),MemStorage::new(),server_id,num_servers,addresses);
-    let service = kvservice_grpc::create_kv_service(kv);
-    let mut server = ServerBuilder::new(env)
-        .register_service(service)
+    let env_kv = Arc::new(Environment::new(1));
+    let env_raft = Arc::new(Environment::new(1));
+    let (kv,raft) = KVServer::new(format!("testdb{}",server_id),MemStorage::new(),server_id,num_servers,addresses);
+    let kv_service = kvservice_grpc::create_kv_service(kv);
+    let raft_service = kvservice_grpc::create_raft_service(raft);
+    let mut kv_server = ServerBuilder::new(env_kv)
+        .register_service(kv_service)
         .bind("127.0.0.1",(base_port+server_id) as u16)
         .build()
         .unwrap();
-    server.start();
-    for &(ref host, port) in server.bind_addrs() {
+    let mut raft_server = ServerBuilder::new(env_raft)
+        .register_service(raft_service)
+        .bind("127.0.0.1",(base_port+server_id+num_servers) as u16)
+        .build()
+        .unwrap();
+    kv_server.start();
+    raft_server.start();
+
+    for &(ref host, port) in kv_server.bind_addrs() {
         println!("listening on {}:{}", host, port);
     }
     let (tx, rx) = oneshot::channel();
@@ -45,7 +54,8 @@ fn main() {
         tx.send(()).unwrap();
     });
     let _ = rx.wait();
-    let _ = server.shutdown().wait();
+    let _ = kv_server.shutdown().wait();
+    let _ = raft_server.shutdown().wait();
 }
 
 fn generate_address(base_port:u64, id:u64) -> String {

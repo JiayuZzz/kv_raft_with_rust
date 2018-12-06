@@ -5,6 +5,9 @@ import "eraftpb.proto";
 service KvService {
     rpc Get(GetReq) returns (GetReply) {}
     rpc Put(PutReq) returns (PutReply) {}
+}
+
+service RaftService {
     rpc SendMsg(eraftpb.Message) returns(Null) {}
 }
 

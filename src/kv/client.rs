@@ -89,7 +89,11 @@ impl KVClient {
             println!("1");
             let reply = match client.put(&req) {
                 Ok(r) => r,
-                _ => {continue;}
+                _ => { // maybe leader error
+                    let num_servers = self.num_servers;
+                    self.leader = (leader_index + 1) % num_servers;
+                    continue;
+                }
             };
             println!("2");
             match reply.get_state() {
@@ -102,8 +106,8 @@ impl KVClient {
                     self.leader = (leader_index + 1) % num_servers;  // try next server
                 }
                 _ => {
-                    println!("put error!");
-                    return ;
+                    println!("put error! retry");
+                    continue ;
                 }
             };
         }
