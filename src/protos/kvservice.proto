@@ -1,8 +1,11 @@
 syntax = "proto3";
 
+import "eraftpb.proto";
+
 service KvService {
     rpc Get(GetReq) returns (GetReply) {}
     rpc Put(PutReq) returns (PutReply) {}
+    rpc SendMsg(eraftpb.Message) returns(Null) {}
 }
 
 enum State {
@@ -11,6 +14,8 @@ enum State {
     NOT_FOUND = 2;
     IO_ERROR = 3;
 }
+
+message Null {}
 
 message GetReq {
     string key = 1;

@@ -16,6 +16,9 @@ path = "src/run_client.rs"
 futures = "0.1.16"
 grpcio = "0.4.0"
 protobuf = "2.0.2"
+bincode = "1.0.0"
+serde = "1.0"
+serde_derive = "1.0.0"
 
 [dependencies.raft]
 git = "https://github.com/pingcap/raft-rs.git"

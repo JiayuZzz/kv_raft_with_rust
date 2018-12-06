@@ -1,6 +1,6 @@
 extern crate kv_raft;
 
-use kv_raft::kv::server;
+use kv_raft::kv::{client,server};
 use kv_raft::protos::kvservice::{PutReq, PutReply, GetReq, GetReply, State};
 use kv_raft::protos::kvservice_grpc::KvServiceClient;
 use grpcio::{ChannelBuilder, EnvBuilder};
@@ -10,70 +10,41 @@ use std::thread;
 
 fn main() {
     let args = env::args().collect::<Vec<_>>();
-    if args.len() != 2 {
+    if args.len() != 3 {
         panic!();
     }
 
-    let port = args[1].parse::<u16>().unwrap();
-
-    let env = Arc::new(EnvBuilder::new().build());
-    let ch  = ChannelBuilder::new(env).connect(format!("localhost:{}",port).as_str());
-    let client = KvServiceClient::new(ch);
-
-    let client= Arc::new(client);
-    let client1 = client.clone();
-    thread::spawn( move|| {
-        let kv_client = KVClient{client};
-        for i in 600..701 {
-            kv_client.put(format!("key{}", i), format!("value{}", i));
-            thread::sleep(std::time::Duration::from_millis(10));
-        }
-    });
-
-    thread::spawn(move || {
-        let kv_client = KVClient{client:client1};
-        for i in 600..701 {
-            let key = format!("key{}",i);
-            let value = kv_client.get(key);
-            println!("get value:{}",value);
-            thread::sleep(std::time::Duration::from_millis(10));
-        }
-    });
-    thread::sleep(std::time::Duration::from_secs(5));
-}
-
-struct KVClient {
-    client:Arc<KvServiceClient>,
-}
-
-impl KVClient {
-    pub fn get(&self, key:String) -> String {
-        let mut req = GetReq::new();
-        req.set_key(key);
-        let reply = self.client.get(&req).expect("Get Failed!");
-        match reply.get_state() {
-            State::OK => {
-                return String::from(reply.get_value());
-            },
-            State::NOT_FOUND => {
-                println!("Not found");
-                return String::from("");
-            },
-            _ => {
-                println!("get error!");
-                String::from("")
-            },
-        }
+    let num_servers = args[1].parse::<u64>().unwrap();
+    let base_port = args[2].parse::<u64>().unwrap();
+    let mut ids = vec![];
+    let mut addresses = vec![];
+    for i in 1..num_servers+1 {
+        addresses.push(generate_address(base_port,i));
+        ids.push(i);
     }
 
-    pub fn put(&self, key:String, value:String) {
-        let mut req = PutReq::new();
-        req.set_key(key);
-        req.set_value(value);
-        let reply = self.client.put(&req).expect("PUT Failed!");
-        match reply.get_state() {
-            State::OK => { println!("put success!");},
-            _ => {println!("put error!")},
-        };
+
+    let mut kv_client = client::KVClient::new(ids,addresses);
+
+    for i in 3001..4000 {
+        kv_client.put(format!("key{}", i), format!("value{}", i));
+        println!("put done");
+        let value = kv_client.get(format!("key{}", i));
+        println!("get value:{}",value);
+        thread::sleep(std::time::Duration::from_millis(100));
     }
+
+    println!("3\n");
+
+//    for i in 3001..4000 {
+//        let key = format!("key{}",i);
+//        let value = kv_client.get(key);
+//        println!("get value:{}",value);
+//    };
+
+    thread::sleep(std::time::Duration::from_secs(60));
+}
+
+fn generate_address(base_port:u64, id:u64) -> String {
+    format!("127.0.0.1:{}",base_port+id)
 }

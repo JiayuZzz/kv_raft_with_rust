@@ -14,18 +14,22 @@
 extern crate raft;
 
 use std::collections::HashMap;
-use std::sync::mpsc::{self, RecvTimeoutError, Receiver};
-use std::thread;
+use std::sync::mpsc::{RecvTimeoutError, Receiver, Sender};
 use std::time::{Duration, Instant};
+use super::super::kv::server::Op;
+use super::super::protos::kvservice_grpc::KvServiceClient;
+use grpcio::{ChannelBuilder, EnvBuilder};
+use std::sync::Arc;
 
 use raft::prelude::*;
 use raft::storage::MemStorage;
+use bincode::{serialize,deserialize};
 
-type ProposeCallback = Box<Fn() + Send>;
+type ProposeCallback = Box<Fn(bool) + Send>;  // if false, not leader
 
 pub enum Msg {
     Propose {
-        id: u8,
+        op: Op,
         cb: ProposeCallback,
     },
     // Here we don't use Raft Message, so use dead_code to
@@ -34,16 +38,18 @@ pub enum Msg {
     Raft(Message),
 }
 
-pub fn init_and_run(storage:MemStorage, receiver:Receiver<Msg>) {
+pub fn init_and_run(storage:MemStorage, receiver:Receiver<Msg>, apply_sender:Sender<Op>,id:u64, num:u64, addresses:Vec<String>) {
+    let mut peers = vec![];
+    for i in 1..num+1 {
+        peers.push(i);
+    }
     // Create the configuration for the Raft node.
     let cfg = Config {
         // The unique ID for the Raft node.
-        id: 1,
+        id,
         // The Raft node list.
         // Mostly, the peers need to be saved in the storage
-        // and we can get them from the Storage::initial_state function, so here
-        // you need to set it empty.
-        peers: vec![1],
+        peers,
         // Election tick is for how long the follower may campaign again after
         // it doesn't receive any message from the leader.
         election_tick: 10,
@@ -72,14 +78,23 @@ pub fn init_and_run(storage:MemStorage, receiver:Receiver<Msg>) {
 
     // Use a HashMap to hold the `propose` callbacks.
     let mut cbs = HashMap::new();
+    let mut rpc_clients = init_clients(addresses,id);         // for send msg to other raft nodes
 
     loop {
         match receiver.recv_timeout(timeout) {
-            Ok(Msg::Propose { id, cb }) => {
-                cbs.insert(id, cb);
-                r.propose(vec![], vec![id]).unwrap();
+            Ok(Msg::Propose { op, cb }) => {
+                if r.raft.leader_id != r.raft.id{ // not leader, callback to notify client
+                    cb(false);
+                    continue;
+                }
+                let se_op = serialize(&op).unwrap();
+                cbs.insert(se_op.clone(), cb);
+                r.propose(vec![], se_op).unwrap();
             }
-            Ok(Msg::Raft(m)) => r.step(m).unwrap(),
+            Ok(Msg::Raft(m)) => {
+                println!("{} got raft msg",r.raft.id);
+                r.step(m).unwrap()
+            },
             Err(RecvTimeoutError::Timeout) => (),
             Err(RecvTimeoutError::Disconnected) => return (),
         }
@@ -94,11 +109,11 @@ pub fn init_and_run(storage:MemStorage, receiver:Receiver<Msg>) {
             timeout -= d;
         }
 
-        on_ready(&mut r, &mut cbs);
+        on_ready(&mut r, &mut cbs,&mut rpc_clients ,apply_sender.clone(), );
     }
 }
 
-fn on_ready(r: &mut RawNode<MemStorage>, cbs: &mut HashMap<u8, ProposeCallback>) {
+fn on_ready(r: &mut RawNode<MemStorage>, cbs: &mut HashMap<Vec<u8>, ProposeCallback>,clients: &mut HashMap<u64,Arc<KvServiceClient>>, apply_sender:Sender<Op>) {
     if !r.has_ready() {
         return;
     }
@@ -110,8 +125,13 @@ fn on_ready(r: &mut RawNode<MemStorage>, cbs: &mut HashMap<u8, ProposeCallback>)
     if is_leader {
         // If the peer is leader, the leader can send messages to other followers ASAP.
         let msgs = ready.messages.drain(..);
-        for _msg in msgs {
-            // Here we only have one peer, so can ignore this.
+        for msg in msgs {
+            let client = match clients.get(&msg.get_to()) {
+                Some(c) => c.clone(),
+                None => {continue;},
+            };
+            println!("send leader msg");
+            client.send_msg(&msg);
         }
     }
 
@@ -137,8 +157,14 @@ fn on_ready(r: &mut RawNode<MemStorage>, cbs: &mut HashMap<u8, ProposeCallback>)
         // If not leader, the follower needs to reply the messages to
         // the leader after appending Raft entries.
         let msgs = ready.messages.drain(..);
-        for _msg in msgs {
+        for msg in msgs {
             // Send messages to other peers.
+            let client = match clients.get(&msg.get_to()) {
+                Some(c) => c.clone(),
+                None => {continue;},
+            };
+            println!("send no leader msg to {}",msg.to);
+            client.send_msg(&msg);
         }
     }
 
@@ -155,8 +181,12 @@ fn on_ready(r: &mut RawNode<MemStorage>, cbs: &mut HashMap<u8, ProposeCallback>)
             }
 
             if entry.get_entry_type() == EntryType::EntryNormal {
-                if let Some(cb) = cbs.remove(entry.get_data().get(0).unwrap()) {
-                    cb();
+                let op:Op = deserialize(entry.get_data()).unwrap();
+                match apply_sender.send(op) {
+                    _ => {}
+                }
+                if let Some(cb) = cbs.remove(entry.get_data()) {
+                    cb(true);
                 }
             }
 
@@ -166,5 +196,18 @@ fn on_ready(r: &mut RawNode<MemStorage>, cbs: &mut HashMap<u8, ProposeCallback>)
 
     // Advance the Raft
     r.advance(ready);
+}
+
+// init communication clients
+fn init_clients(addresses:Vec<String>, id:u64) -> HashMap<u64,Arc<KvServiceClient>> {
+    let mut clients = HashMap::new();
+    for i in 1..addresses.len()+1 {
+        if i == id as usize { continue;}
+        let env = Arc::new(EnvBuilder::new().build());
+        let ch = ChannelBuilder::new(env).connect(addresses[i-1].as_str());
+        let client = KvServiceClient::new(ch);
+        clients.insert(i as u64,Arc::new(client));
+    }
+    clients
 }
 
