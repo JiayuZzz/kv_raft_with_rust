@@ -28,7 +28,7 @@ use raft::storage::MemStorage;
 use bincode::{serialize,deserialize};
 use std::thread;
 
-type ProposeCallback = Box<Fn(bool,Vec<u8>) + Send>;  // if false, not leader. vec is serialized address map
+type ProposeCallback = Box<Fn(i32,Vec<u8>) + Send>;  // return -1 if is leader, else return leader's id, vec is serialized address map
 
 pub enum Msg {
     Propose {
@@ -102,8 +102,10 @@ pub fn init_and_run(storage:MemStorage, receiver:Receiver<Msg>, apply_sender:Sen
     loop {
         match receiver.recv_timeout(timeout) {
             Ok(Msg::Propose { seq, op, cb }) => {
+                let leader_id = r.raft.leader_id;
                 if r.raft.leader_id != r.raft.id{ // not leader, callback to notify client
-                    cb(false,vec![]);
+                    println!("leader is {}, i'm {}",leader_id,r.raft.id);
+                    cb(leader_id as i32 ,serialize(&addresses).unwrap());
                     continue;
                 }
                 let se_op = serialize(&op).unwrap();
@@ -111,8 +113,9 @@ pub fn init_and_run(storage:MemStorage, receiver:Receiver<Msg>, apply_sender:Sen
                 r.propose(serialize(&seq).unwrap(), se_op).unwrap();
             }
             Ok(Msg::ConfigChange {seq,change,cb}) => {
+                let leader_id = r.raft.leader_id;
                 if r.raft.leader_id != r.raft.id {
-                    cb(false,vec![]);
+                    cb(leader_id as i32,serialize(&addresses).unwrap());
                     continue;
                 } else {
                     // TODO add address to map
@@ -249,7 +252,7 @@ fn on_ready(r: &mut RawNode<MemStorage>, cbs: &mut HashMap<u64, ProposeCallback>
                     _ => {}
                 }
                 if let Some(cb) = cbs.remove(&seq) {
-                    cb(true,serialize(addresses).unwrap());
+                    cb(-1,serialize(addresses).unwrap());
                 }
             }
 
@@ -267,7 +270,7 @@ fn on_ready(r: &mut RawNode<MemStorage>, cbs: &mut HashMap<u64, ProposeCallback>
 
                 r.apply_conf_change(&change);
                 if let Some(cb) = cbs.remove(&seq) {
-                    cb(true,serialize(addresses).unwrap());
+                    cb(-1,serialize(addresses).unwrap());
                 }
             }
         }

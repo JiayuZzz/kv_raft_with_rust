@@ -35,6 +35,7 @@ message GetReply {
     State state = 1;
     string value = 2;
     string address_map = 3;
+    uint64 leader_id = 4;
 }
 
 message PutReq {
@@ -46,9 +47,11 @@ message PutReq {
 message PutReply {
     State state = 1;
     string address_map = 2;
+    uint64 leader_id = 3;
 }
 
 message ChangeReply {
     State state = 1;
     string address_map = 2;
+    uint64 leader_id = 3;
 }

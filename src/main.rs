@@ -22,16 +22,16 @@ fn main() {
     let args = env::args().collect::<Vec<_>>();
 
     let command = args[1].clone();
+    let id = args[2].parse::<u64>().unwrap();
+    let port = args[3].parse::<u16>().unwrap();
     if command == "new" {
-        let id = args[2].parse::<u64>().unwrap();
-        let port = args[3].parse::<u16>().unwrap();
         new_server(port, id,HashMap::new());
     } else if command == "add" {
-        let id = args[2].parse::<u64>().unwrap();
-        let port = args[3].parse::<u16>().unwrap();
         let leader_port = args[4].parse::<u16>().unwrap();
         let address_map = add_server(port,id,leader_port);
         new_server(port,id, address_map);
+    } else if command == "client" {
+        run_client(id,port);
     }
 }
 
@@ -99,4 +99,24 @@ fn add_server(port:u16, server_id:u64, leader_port:u16) -> HashMap<u64,String> {
         return address_map;
     }
     HashMap::new()
+}
+
+fn run_client(server_id:u64,server_port:u16) {
+    let address = format!("127.0.0.1:{}",server_port);
+
+
+    let mut kv_client = client::KVClient::new(server_id,address);
+
+    for i in 3001..4000 {
+        println!("put begin");
+        kv_client.put(format!("key{}", i), format!("value{}", i));
+        println!("put done");
+        let value = kv_client.get(format!("key{}", i));
+        println!("get value:{}", value);
+        thread::sleep(std::time::Duration::from_millis(100));
+    }
+
+    println!("3\n");
+
+    thread::sleep(std::time::Duration::from_secs(60));
 }

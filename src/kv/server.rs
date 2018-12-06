@@ -83,11 +83,12 @@ impl KvService for KVServer {
             config::Msg::Propose {
                 seq,
                 op,
-                cb: Box::new(move |is_leader:bool, addresses:Vec<u8>| {
+                cb: Box::new(move |leader_id:i32, addresses:Vec<u8>| {
                     // Get
                     let mut reply = GetReply::new();
-                    if !is_leader{
+                    if leader_id>=0 {  // means this node is not leader, return leader id
                         reply.set_state(State::WRONG_LEADER);
+                        reply.set_leader_id(leader_id as u64);
                     } else {
                         let (state, value) = match db.get(req.get_key().as_bytes()) {
                             Ok(Some(v)) => (State::OK, String::from(v.to_utf8().unwrap()),),
@@ -131,9 +132,14 @@ impl KvService for KVServer {
             config::Msg::Propose {
                 seq,
                 op,
-                cb: Box::new(move |is_leader:bool,addresses:Vec<u8>| {
+                cb: Box::new(move |leader_id:i32 ,addresses:Vec<u8>| {
                     let mut reply = PutReply::new();
-                    reply.set_state(if is_leader {State::OK} else {State::WRONG_LEADER});
+                    if leader_id >= 0{
+                        reply.set_state(State::WRONG_LEADER);
+                        reply.set_leader_id(leader_id as u64);
+                    } else {
+                        reply.set_state(State::OK);
+                    }
                     reply.set_address_map(String::from_utf8(addresses).unwrap());
                     // done job, wake
                     s1.send(reply).expect("cb channel closed");
@@ -161,13 +167,19 @@ impl KvService for KVServer {
         let sender = self.sender.clone();
         let seq = self.seq;
         self.seq+=1;
+        println!("got put request");
         sender.send(
             config::Msg::ConfigChange {
                 seq,
                 change: req,
-                cb: Box::new(move |is_leader: bool,addresses:Vec<u8>| {
+                cb: Box::new(move |leader_id:i32,addresses:Vec<u8>| {
                     let mut reply = ChangeReply::new();
-                    reply.set_state(if is_leader{State::OK} else {State::WRONG_LEADER});
+                    if leader_id >= 0{
+                        reply.set_state(State::WRONG_LEADER);
+                        reply.set_leader_id(leader_id as u64);
+                    } else {
+                        reply.set_state(State::OK);
+                    }
                     // done
                     reply.set_address_map(String::from_utf8(addresses).unwrap());
                     s1.send(reply).expect("cb channel closed");

@@ -4,18 +4,6 @@ version = "0.1.0"
 authors = ["yuwolf <wujy.cs@gmail.com>"]
 edition = "2018"
 
-[[bin]]
-name = "server"
-path = "src/run_server.rs"
-
-[[bin]]
-name = "client"
-path = "src/run_client.rs"
-
-[[bin]]
-name = "main"
-path = "src/main.rs"
-
 [dependencies]
 futures = "0.1.16"
 grpcio = "0.4.0"
