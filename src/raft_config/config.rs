@@ -22,7 +22,6 @@ use super::super::protos::service::AddressState;
 use grpcio::{ChannelBuilder, EnvBuilder};
 use std::sync::Arc;
 use protobuf::Message as PMessage;
-use std::process::exit;
 
 use raft::prelude::*;
 use raft::storage::MemStorage;
@@ -127,7 +126,7 @@ pub fn init_and_run(storage:MemStorage, receiver:Receiver<Msg>, apply_sender:Sen
             },
             Ok(Msg::Raft(m)) => {
 //                println!("{} got raft msg from {}",r.raft.id,m.from);
-                if let Ok(a) = r.step(m) {};
+                if let Ok(_a) = r.step(m) {};
             },
             Ok(Msg::Address (address_state)) => {
                 let new_addresses:HashMap<u64,String> = deserialize(address_state.get_address_map()).unwrap();
@@ -184,14 +183,13 @@ fn on_ready(r: &mut RawNode<MemStorage>, cbs: &mut HashMap<u64, ProposeCallback>
                 Some(c) => c.clone(),
                 None => {continue;},
             };
-            let me = r.raft.id;
             let mut address_state = AddressState::new();
             address_state.set_address_map(serialize(&addresses).unwrap());
             thread::spawn(move || {
                 let msg = msg;
                 let address_state = address_state;
-                client.send_msg(&msg);
-                client.send_address(&address_state);
+                if let Ok(_) = client.send_msg(&msg) {};
+                if let Ok(_) = client.send_address(&address_state) {};
             });
         }
     }
@@ -227,7 +225,7 @@ fn on_ready(r: &mut RawNode<MemStorage>, cbs: &mut HashMap<u64, ProposeCallback>
 //            println!("send no leader msg to {}",msg.to);
             thread::spawn(move || {
                 let msg = msg;
-                client.send_msg(&msg);
+                if let Ok(_) = client.send_msg(&msg) {};
             });
         }
     }
@@ -261,7 +259,7 @@ fn on_ready(r: &mut RawNode<MemStorage>, cbs: &mut HashMap<u64, ProposeCallback>
             if entry.get_entry_type() == EntryType::EntryConfChange {
                 println!("hello");
                 let mut change = ConfChange::new();
-                change.merge_from_bytes(entry.get_data());
+                change.merge_from_bytes(entry.get_data()).unwrap();
                 let seq:u64 = deserialize(entry.get_context()).unwrap();
                 let id = change.get_node_id();
 
@@ -271,7 +269,7 @@ fn on_ready(r: &mut RawNode<MemStorage>, cbs: &mut HashMap<u64, ProposeCallback>
                     insert_client(id, address.as_str(), clients);
                     addresses.insert(id, address);
                 } else if change_type == ConfChangeType::RemoveNode {
-                    if let Some(client) = clients.remove(&id) {
+                    if let Some(_client) = clients.remove(&id) {
                         addresses.remove(&id);
                     }
                     println!("remove {}",id);

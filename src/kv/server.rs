@@ -5,9 +5,8 @@ extern crate rocksdb;
 
 use rocksdb::{DB, Writable};
 use raft::storage::MemStorage;
-use super::super::protos::service::{PutReply,PutReq,State,GetReply,GetReq,ChangeReply,Null};
-use super::super::protos::service_grpc::{KvService,RaftService};
-use raft::eraftpb::Message;
+use super::super::protos::service::{PutReply,PutReq,State,GetReply,GetReq,ChangeReply};
+use super::super::protos::service_grpc::KvService;
 use raft::prelude::*;
 use std::sync::Arc;
 use std::thread;
@@ -121,7 +120,6 @@ impl KvService for KVServer {
     fn put(&mut self, ctx:RpcContext, req:PutReq, sink:UnarySink<PutReply>) {
         println!("get put request");
         let(s1,r1) = mpsc::channel();
-        let db = Arc::clone(&self.db);
         let sender = self.sender.clone();
         let op = Op::Put {key:String::from(req.get_key()), val:String::from(req.get_value())};
         let seq = self.seq;

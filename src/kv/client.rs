@@ -1,13 +1,9 @@
 use std::collections::HashMap;
-use std::env;
 use std::sync::Arc;
-use std::thread;
 
 use grpcio::{ChannelBuilder, EnvBuilder};
 
-use super::server;
-
-use super::super::protos::service::{GetReply, GetReq, PutReply, PutReq, State};
+use super::super::protos::service::{ GetReq, PutReq, State};
 use super::super::protos::service_grpc::KvServiceClient;
 use bincode::deserialize;
 
@@ -71,7 +67,7 @@ impl KVClient {
             if reply.get_address_map().len()>0{
                 let address_map:HashMap<u64,String> = deserialize(&reply.get_address_map()).unwrap();
                 for (id,address) in &address_map {
-                    if let Some(v) = self.clients.get(id) {
+                    if let Some(_v) = self.clients.get(id) {
                         continue;
                     }
                     println!("insert {} client",id);
@@ -131,7 +127,7 @@ impl KVClient {
                 println!("get addres");
                 let address_map:HashMap<u64,String> = deserialize(&reply.get_address_map()).unwrap();
                 for (id,address) in &address_map {
-                    if let Some(v) = self.clients.get(id) {
+                    if let Some(_v) = self.clients.get(id) {
                         continue;
                     }
                     println!("insert {} client",id);

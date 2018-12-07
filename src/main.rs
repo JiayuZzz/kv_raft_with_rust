@@ -3,7 +3,7 @@ extern crate kv_raft;
 use std::sync::Arc;
 use kv_raft::kv::server::KVServer;
 use kv_raft::kv::client;
-use kv_raft::protos::service::{ChangeReply,State};
+use kv_raft::protos::service::State;
 use kv_raft::protos::service_grpc::KvServiceClient;
 use grpcio::{Environment, ServerBuilder};
 use kv_raft::protos::{service_grpc,};
@@ -87,8 +87,7 @@ fn change_server(change_type:&str, port:u16, server_id:u64, leader_port:u16) -> 
     change.set_change_type(if change_type=="add"{ConfChangeType::AddNode} else {ConfChangeType::RemoveNode});
     change.set_context(if change_type=="add"{serialize(&raft_address).unwrap()}else{vec![]});
 
-    let mut reply = ChangeReply::new();
-    let mut reply = match client.change_config(&change){
+    let reply = match client.change_config(&change){
         Ok(r) => r,
         _ => {panic!("add error rpc!")}
     };
