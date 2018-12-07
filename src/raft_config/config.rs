@@ -130,7 +130,7 @@ pub fn init_and_run(storage:MemStorage, receiver:Receiver<Msg>, apply_sender:Sen
                 if let Ok(a) = r.step(m) {};
             },
             Ok(Msg::Address (address_state)) => {
-                let new_addresses:HashMap<u64,String> = deserialize(address_state.get_address_map().as_bytes()).unwrap();
+                let new_addresses:HashMap<u64,String> = deserialize(address_state.get_address_map()).unwrap();
                 for (id,address) in &new_addresses {
                     let insert = match addresses.get(id) {
                         Some(a) => {
@@ -186,7 +186,7 @@ fn on_ready(r: &mut RawNode<MemStorage>, cbs: &mut HashMap<u64, ProposeCallback>
             };
             let me = r.raft.id;
             let mut address_state = AddressState::new();
-            address_state.set_address_map(String::from_utf8(serialize(&addresses).unwrap()).unwrap());
+            address_state.set_address_map(serialize(&addresses).unwrap());
             thread::spawn(move || {
                 let msg = msg;
                 let address_state = address_state;

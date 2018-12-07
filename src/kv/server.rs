@@ -98,7 +98,7 @@ impl KvService for KVServer {
                         reply.set_state(state);
                         reply.set_value(value);
                     }
-                    reply.set_address_map(String::from_utf8(addresses).unwrap());
+                    reply.set_address_map(addresses);
                     // done job, wake
                     s1.send(reply).expect("cb channel closed");
                 }),
@@ -140,7 +140,7 @@ impl KvService for KVServer {
                     } else {
                         reply.set_state(State::OK);
                     }
-                    reply.set_address_map(String::from_utf8(addresses).unwrap());
+                    reply.set_address_map(addresses);
                     // done job, wake
                     s1.send(reply).expect("cb channel closed");
                 }),
@@ -181,7 +181,7 @@ impl KvService for KVServer {
                         reply.set_state(State::OK);
                     }
                     // done
-                    reply.set_address_map(String::from_utf8(addresses).unwrap());
+                    reply.set_address_map(addresses);
                     s1.send(reply).expect("cb channel closed");
                 })
             }).unwrap();
@@ -215,9 +215,9 @@ fn apply_daemon(receiver:Receiver<Op>, db:Arc<DB>) {
         match op {
             Op::Get {key:_k,} => {}  // get done by leader
             Op::Put {key, val,} => {
-                println!("put");
+//                println!("put");
                 db.put(key.as_bytes(),val.as_bytes()).unwrap();
-                println!("put done");
+//                println!("put done");
             }
         }
     }

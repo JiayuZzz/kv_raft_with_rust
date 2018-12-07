@@ -96,8 +96,8 @@ fn change_server(change_type:&str, port:u16, server_id:u64, leader_port:u16) -> 
         State::OK => {},
         _ => {panic!("add error reply!")},
     };
-    if reply.get_address_map()!=""{
-        let address_map:HashMap<u64,String> = deserialize(&reply.get_address_map().as_bytes()).unwrap();
+    if reply.get_address_map().len()>0{
+        let address_map:HashMap<u64,String> = deserialize(&reply.get_address_map()).unwrap();
         println!("not null");
         return address_map;
     }
@@ -110,7 +110,7 @@ fn run_client(server_id:u64,server_port:u16) {
 
     let mut kv_client = client::KVClient::new(server_id,address);
 
-    for i in 3001..4000 {
+    for i in 3001..7000 {
         println!("put begin");
         kv_client.put(format!("key{}", i), format!("value{}", i));
         println!("put done");

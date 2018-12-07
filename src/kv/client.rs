@@ -68,8 +68,8 @@ impl KVClient {
             };
 
             // try add new node
-            if reply.get_address_map()!=""{
-                let address_map:HashMap<u64,String> = deserialize(&reply.get_address_map().as_bytes()).unwrap();
+            if reply.get_address_map().len()>0{
+                let address_map:HashMap<u64,String> = deserialize(&reply.get_address_map()).unwrap();
                 for (id,address) in &address_map {
                     if let Some(v) = self.clients.get(id) {
                         continue;
@@ -127,9 +127,9 @@ impl KVClient {
 //            println!("2");
 
             // try add new node
-            if reply.get_address_map()!=""{
+            if reply.get_address_map().len()>0{
                 println!("get addres");
-                let address_map:HashMap<u64,String> = deserialize(&reply.get_address_map().as_bytes()).unwrap();
+                let address_map:HashMap<u64,String> = deserialize(&reply.get_address_map()).unwrap();
                 for (id,address) in &address_map {
                     if let Some(v) = self.clients.get(id) {
                         continue;
