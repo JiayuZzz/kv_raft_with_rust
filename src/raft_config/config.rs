@@ -22,6 +22,7 @@ use super::super::protos::service::AddressState;
 use grpcio::{ChannelBuilder, EnvBuilder};
 use std::sync::Arc;
 use protobuf::Message as PMessage;
+use std::process::exit;
 
 use raft::prelude::*;
 use raft::storage::MemStorage;
@@ -125,8 +126,8 @@ pub fn init_and_run(storage:MemStorage, receiver:Receiver<Msg>, apply_sender:Sen
                 }
             },
             Ok(Msg::Raft(m)) => {
-                println!("{} got raft msg from {}",r.raft.id,m.from);
-                r.step(m).unwrap()
+//                println!("{} got raft msg from {}",r.raft.id,m.from);
+                if let Ok(a) = r.step(m) {};
             },
             Ok(Msg::Address (address_state)) => {
                 let new_addresses:HashMap<u64,String> = deserialize(address_state.get_address_map().as_bytes()).unwrap();
@@ -234,7 +235,7 @@ fn on_ready(r: &mut RawNode<MemStorage>, cbs: &mut HashMap<u64, ProposeCallback>
     if let Some(committed_entries) = ready.committed_entries.take() {
         let mut _last_apply_index = 0;
         for entry in committed_entries {
-            println!("handle commited entries");
+//            println!("handle commited entries");
             // Mostly, you need to save the last apply index to resume applying
             // after restart. Here we just ignore this because we use a Memory storage.
             _last_apply_index = entry.get_index();
@@ -263,15 +264,27 @@ fn on_ready(r: &mut RawNode<MemStorage>, cbs: &mut HashMap<u64, ProposeCallback>
                 change.merge_from_bytes(entry.get_data());
                 let seq:u64 = deserialize(entry.get_context()).unwrap();
                 let id = change.get_node_id();
-                let address:String = deserialize(change.get_context()).unwrap();
 
-                insert_client(id,address.as_str(), clients);
-                addresses.insert(id,address);
+                let change_type = change.get_change_type();
+                if change_type == ConfChangeType::AddNode {
+                    let address:String = deserialize(change.get_context()).unwrap();
+                    insert_client(id, address.as_str(), clients);
+                    addresses.insert(id, address);
+                } else if change_type == ConfChangeType::RemoveNode {
+                    if let Some(client) = clients.remove(&id) {
+                        addresses.remove(&id);
+                    }
+                    println!("remove {}",id);
+//                    if id == r.raft.id {
+//                        exit(0);
+//                    }
+                }
 
                 r.apply_conf_change(&change);
                 if let Some(cb) = cbs.remove(&seq) {
                     cb(-1,serialize(addresses).unwrap());
                 }
+                println!("addresses:{:?}",addresses);
             }
         }
     }

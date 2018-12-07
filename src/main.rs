@@ -28,8 +28,10 @@ fn main() {
         new_server(port, id,HashMap::new());
     } else if command == "add" {
         let leader_port = args[4].parse::<u16>().unwrap();
-        let address_map = add_server(port,id,leader_port);
+        let address_map = change_server("add",port,id,leader_port);
         new_server(port,id, address_map);
+    } else if command == "remove" {
+        change_server("remove",0,id,port);
     } else if command == "client" {
         run_client(id,port);
     }
@@ -71,18 +73,19 @@ fn new_server(port:u16, server_id:u64, addresses:HashMap<u64,String>) {
     let _ = raft_server.shutdown().wait();
 }
 
-fn add_server(port:u16, server_id:u64, leader_port:u16) -> HashMap<u64,String> {
+fn change_server(change_type:&str, port:u16, server_id:u64, leader_port:u16) -> HashMap<u64,String> { // add or remove server
     let raft_address = format!(
         "127.0.0.1:{}",port+1000
     );
+    println!("{}",change_type);
 
     let env = Arc::new(EnvBuilder::new().build());
     let ch = ChannelBuilder::new(env).connect(format!("127.0.0.1:{}",leader_port).as_str());
     let client = KvServiceClient::new(ch);
     let mut change = ConfChange::new();
     change.set_node_id(server_id);
-    change.set_change_type(ConfChangeType::AddNode);
-    change.set_context(serialize(&raft_address).unwrap());
+    change.set_change_type(if change_type=="add"{ConfChangeType::AddNode} else {ConfChangeType::RemoveNode});
+    change.set_context(if change_type=="add"{serialize(&raft_address).unwrap()}else{vec![]});
 
     let mut reply = ChangeReply::new();
     let mut reply = match client.change_config(&change){
